@@ -458,7 +458,7 @@ class wxpay {
      * @param array $data 待签名的数组
      * @param string $key v2密钥
      */
-    public function SHA256($data,$key)
+    private function SHA256($data,$key)
     {
         ksort($data);
         $str_sign = urldecode(http_build_query($data));
@@ -469,11 +469,13 @@ class wxpay {
 
     /**
      * h5发券,返回的是链接，让用户扫码访问，一张券只能领取一次
-     * @param array $data 请求参数合集
+     * @param array $data 请求参数合集,签名会在方法里面生成。
      */
     public function h5_getcouponinfo($data)
     {
         $url = 'https://action.weixin.qq.com/busifavor/getcouponinfo?';
+        unset($data['sign']);
+        $data['sign'] = $this->SHA256($data,v2key);
         $url = $url. urldecode(http_build_query($data));
         return $url;
     }
