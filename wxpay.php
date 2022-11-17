@@ -2,12 +2,13 @@
 
 
 const v3key = '******';//v3秘钥
-const pr = '/apiclient_key.pem';//商户私钥文件，是个路径
+const v2key = '******';
+const pr = 'apiclient_key.pem';//商户私钥文件，是个路径
 const mchid = '******';//商户号
 const serial_no = '******';//商家证书序列号
 const Serial_wx = '******';//微信平台证书序列号
-const appid = '******';
-const wx_pub = '******';//微信支付平台秘钥，是个路径
+const appid = '*****';//appid可以是小程序或者公众号
+const wx_pub = 'wxcrt.pub';//微信支付平台秘钥，是个路径
 
 /*
  * 微信签名验签
@@ -21,6 +22,7 @@ class wxpay {
      * 微信支付类
      */
     /**
+     * 获取token，必要的数据
      * @param string $url 请求的url地址
      * @param string $data 请求的主体
      * @param false $get 默认使用post方法
@@ -40,7 +42,7 @@ class wxpay {
         $url_parts = parse_url($url);
         $canonical_url = ($url_parts['path'] . (!empty($url_parts['query']) ? "?${url_parts['query']}" : ""));//url
 //    var_dump($canonical_url);exit;
-        $nonce_str = md5(mt_rand(0000,9999).time());//请求随机串
+        $nonce_str = $this->get_str();//请求随机串
         $timestamp = time();//请求时间戳
 
         if($get == true ){
@@ -80,6 +82,7 @@ class wxpay {
      *
      */
     /**
+     * http访问数据
      * @param string $url 请求的url
      * @param array $setheader 设置请求头
      * @param string $data post请求的数据
@@ -138,7 +141,8 @@ class wxpay {
     }
 
     /**
-     * @param array $data 要发送的数据
+     * native支付，返回qrcode链接
+     * @param array $data 要发送的数据,数组格式
      * @param bool $type 默认严格模式，对收发的数据进行验证签名
      * @return array 返回数组
      */
@@ -160,9 +164,9 @@ class wxpay {
             $jg = $this->v3_verify($res,$this->hd,file_get_contents(wx_pub));
 //            var_dump($code['code_url']);exit();
             if ($jg === 1){
-                return array('code'=>'验证成功','code_url'=>$code['code_url']);
+                return array('code'=>'SUCCESS','code_url'=>$code['code_url']);
             }else{
-                return array('code'=>'验证失败，不返回数据');
+                return array('code'=>'FAIL，不返回数据');
             }
         }
         return array('code'=>'数据未验证','code_url'=>$code['code_url']);
@@ -190,9 +194,9 @@ class wxpay {
         if ($type == true){
             $jg =  $this->v3_verify($res,$this->hd,file_get_contents(wx_pub) );
             if($jg == 1){
-                return array('code'=>'验证成功','prepay_id'=>$_res['prepay_id']);
+                return array('code'=>'SUCCESS','prepay_id'=>$_res['prepay_id']);
             }
-            return array('code'=>'验证失败');
+            return array('code'=>'FAIL');
         }
         return array('code'=>'数据未验证','prepay_id'=>$_res['prepay_id']);
     }
@@ -225,9 +229,9 @@ class wxpay {
         $wx_k = $this->v3_verify($_crs,$this->hd,$ttr);
 
             if($wx_k === 1){
-                return array('code'=>'验签成功','证书'=>$crt,'微信支付公钥'=>$ttr);
+                return array('code'=>'SUCCESS','证书'=>$crt,'微信支付公钥'=>$ttr);
             }else{
-                return '验签失败，不返回数据';
+                return 'FAIL，不返回数据';
             }
         }
 
@@ -238,8 +242,19 @@ class wxpay {
      * @param string $pub 位置支付平台证书公钥
      * @return int 返回1代表成功
      */
-    private function v3_verify($body,$theader,$pub)
+    public function v3_verify($body,$theader,$pub)
     {
+       if(is_array($theader)==true){
+           $v_sj =$theader['Wechatpay-Timestamp']."\n".
+               $theader['Wechatpay-Nonce']."\n".
+               $body."\n";
+           
+            $jm = base64_decode($theader['Wechatpay-Signature']);
+            // var_dump($v_sj,$jm,$pub,);exit;
+           $wx_k = openssl_verify($v_sj,$jm,$pub,'sha256WithRSAEncryption');
+        //   var_dump(openssl_error_string(),$wx_k);exit;
+           return $wx_k;
+       }
         $str =  $this->get_header($theader);
             $v_sj =$str['Wechatpay-Timestamp']."\n".
                 $str['Wechatpay-Nonce']."\n".
@@ -249,6 +264,7 @@ class wxpay {
     }
 
     /**
+     * 获取加密后的名字
      * @param string $name 原先的名字
      * @return string 返回加密后的名字
      */
@@ -263,6 +279,7 @@ class wxpay {
     //商家转账到零钱/**
 
     /**
+     * 商家转账到零钱
      * @param array $data 请求数据合集
      * @param bool $type 默认是严格模式
      * @return array|string[] 返回数组
@@ -293,14 +310,202 @@ class wxpay {
         if($type == true){
             $jg = $this->v3_verify($res,$this->hd,file_get_contents(wx_pub) );
             if($jg == 1){
-                return array('code'=>'验证通过',$_res);
+                return array('code'=>'SUCCESS',$_res);
             }else{
-                return array('code'=>'验证未通过，不返回数据');
+                return array('code'=>'FAIL，不返回数据');
         }
 
         }
         return array('code'=>'未验证数据',$_res);
     }
 
-//
+    /**
+     * 发放代金券
+     * @param array $data
+     * @param bool $type
+     */
+    public function v3_coupons($data,$type = true)
+    {
+        $url = "https://api.mch.weixin.qq.com/v3/marketing/favor/users/{$data['openid']}/coupons";
+        unset($data['openid']);
+        $data = json_encode($data,256);
+//        var_dump($url);exit;
+        $token =  $this->get_token($url,pr,$data,false);
+        $setheader = array('Authorization: WECHATPAY2-SHA256-RSA2048 '.$token,
+            'Accept: application/json',
+            'Content-Type: application/json',
+            'User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36');
+//        var_dump($setheader,$token,$data);exit;
+        $res = $this->http_pg($url,$setheader,$data);
+        $_res = json_decode($res,true);
+//        var_dump($res);
+        if($type == true){
+            $jg = $this->v3_verify($res,$this->hd,file_get_contents(wx_pub) );
+            if($jg == 1){
+                return array('code'=>'SUCCESS',$_res);
+            }else{
+                return array('code'=>'FAIL，不返回数据');
+            }
+
+        }
+        return array('code'=>'未验证数据',$_res);
+    }
+
+    /**
+     * 设置消息通知地址API
+     * @param array $data
+     * @param bool $type
+     */
+    public function v3_callbacks($data,$type = true)
+    {
+        $url = 'https://api.mch.weixin.qq.com/v3/marketing/favor/callbacks';
+        $data = json_encode($data,256);
+        $token =  $this->get_token($url,pr,$data,false);
+        $setheader = array('Authorization: WECHATPAY2-SHA256-RSA2048 '.$token,
+            'Accept: application/json',
+            'Content-Type: application/json',
+            'User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36');
+        $res = $this->http_pg($url,$setheader,$data);
+        $_res = json_decode($res,true);
+//        var_dump($_res);
+        if($type == true){
+            $jg = $this->v3_verify($res,$this->hd,file_get_contents(wx_pub) );
+            if($jg == 1){
+                return array('code'=>'SUCCESS',$_res);
+            }else{
+                return array('code'=>'FAIL，不返回数据');
+            }
+
+        }
+        return array('code'=>'未验证数据',$_res);
+
+    }
+
+
+    /**
+     * 解密数据
+     * @param string $body
+     * @return array $obj
+     */
+    public function aead_256_gmc($body)
+    {
+        $crs = json_decode($body,true);//把返回的数据解析成数组
+        $m = $crs['resource']['ciphertext'];//密文，需要解密
+        $m = base64_decode($m);//必须需要解码，不然会失败
+        $add_data = $crs['resource']['associated_data'];//额外数据
+        $nonce = $crs['resource']['nonce'];//解密字符串
+//var_dump($m,$add_data,$nonce,v3key);exit();
+        $data = sodium_crypto_aead_aes256gcm_decrypt($m,$add_data,$nonce,v3key);//解密后获取的是证书
+        $obj = json_decode($data,true);
+        return $obj;
+    }
+
+    /**
+     * 生成随机字符串
+     * @return string
+     */
+    public function get_str()
+    {//生成随机字符串，刚好32位
+
+        // print_r(hash_algos());exit;
+        $mm = hash('tiger192,3',time(),1);
+        // $mm = hash('md5',$mm,1);
+        
+        // var_dump(base64_encode($mm));
+        return base64_encode($mm);
+    }
+
+    /**
+     * 生成订单号
+     * @return string
+     */
+    public function get_out()
+    {
+    //生成订单号
+    return date('YmdHis').mt_rand(1000,9999).time();
+    }
+
+    /**
+     * 创建商家券
+     * @param array $data 请求参数合集
+     * @param bool $type 严格模式
+     */
+    public function v3_stocks($data,$type = true)
+    {
+        $url = 'https://api.mch.weixin.qq.com/v3/marketing/busifavor/stocks';
+        $data = json_encode($data,256);
+        $token =  $this->get_token($url,pr,$data,false);
+        $setheader = array('Authorization: WECHATPAY2-SHA256-RSA2048 '.$token,
+            'Accept: application/json',
+            'Content-Type: application/json',
+            'User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36');
+        $res = $this->http_pg($url,$setheader,$data);
+        $_res = json_decode($res,true);
+//        var_dump($_res);
+        if($type == true){
+            $jg = $this->v3_verify($res,$this->hd,file_get_contents(wx_pub) );
+            if($jg == 1){
+                return array('code'=>'SUCCESS',$_res);
+            }else{
+                return array('code'=>'FAIL，不返回数据');
+            }
+        }
+        return array('code'=>'未验证数据',$_res);
+    }
+
+    /**
+     * v2 sha256签名
+     * @param array $data 待签名的数组
+     * @param string $key v2密钥
+     */
+    public function SHA256($data,$key)
+    {
+        ksort($data);
+        $str_sign = urldecode(http_build_query($data));
+        $str_sign = $str_sign .'&key='.$key;
+        $sign = hash_hmac('sha256',$str_sign,$key);
+        return strtoupper($sign);
+    }
+
+    /**
+     * h5发券,返回的是链接，让用户扫码访问，一张券只能领取一次
+     * @param array $data 请求参数合集
+     */
+    public function h5_getcouponinfo($data)
+    {
+        $url = 'https://action.weixin.qq.com/busifavor/getcouponinfo?';
+        $url = $url. urldecode(http_build_query($data));
+        return $url;
+    }
+
+    /**
+     * 核销商家券
+     * @param array $data
+     * @param bool $type
+     */
+    public function coupons_use($data,$type = true)
+    {
+        $url = 'https://api.mch.weixin.qq.com/v3/marketing/busifavor/coupons/use';
+        $data = json_encode($data,256);
+        $token =  $this->get_token($url,pr,$data,false);
+        $setheader = array('Authorization: WECHATPAY2-SHA256-RSA2048 '.$token,
+            'Accept: application/json',
+            'Content-Type: application/json',
+            'User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36');
+        $res = $this->http_pg($url,$setheader,$data);
+        $_res = json_decode($res,true);
+//        var_dump($_res);
+        if($type == true){
+            $jg = $this->v3_verify($res,$this->hd,file_get_contents(wx_pub) );
+            if($jg == 1){
+                return array('code'=>'SUCCESS',$_res);
+            }else{
+                return array('code'=>'FAIL，不返回数据');
+            }
+        }
+        return array('code'=>'未验证数据',$_res);
+    }
+    
+    
+//这是结束符
 }
